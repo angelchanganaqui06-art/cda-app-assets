@@ -7,7 +7,6 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="CDA">
-
   <title>Club Defensor Amay</title>
 
   <link rel="manifest" href="./manifest.webmanifest">
@@ -24,9 +23,7 @@
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     html, body {
       margin: 0;
@@ -43,8 +40,8 @@
       left: 0;
       right: 0;
       bottom: var(--safe-bottom);
-      background: var(--fondo);
       overflow: hidden;
+      background: var(--fondo);
     }
 
     #appFrame {
@@ -58,14 +55,14 @@
     #cargando {
       position: fixed;
       inset: 0;
-      z-index: 10;
+      z-index: 20;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(145deg, var(--vino-oscuro), var(--vino));
-      color: white;
       padding-top: var(--safe-top);
       padding-bottom: var(--safe-bottom);
+      background: linear-gradient(145deg, var(--vino-oscuro), var(--vino));
+      color: white;
       transition: opacity .25s ease, visibility .25s ease;
     }
 
@@ -76,13 +73,14 @@
     }
 
     .cargando-contenido {
+      width: min(88%, 360px);
       text-align: center;
-      padding: 24px;
+      padding: 26px 20px;
     }
 
     .cargando-logo {
-      width: 118px;
-      height: 118px;
+      width: 116px;
+      height: 116px;
       border-radius: 28px;
       object-fit: cover;
       box-shadow: 0 10px 28px rgba(0,0,0,.24);
@@ -95,18 +93,38 @@
     }
 
     .cargando-texto {
-      margin-top: 6px;
+      margin-top: 8px;
       font-size: 14px;
-      opacity: .86;
+      line-height: 1.35;
+      opacity: .9;
+    }
+
+    #btnReintentar {
+      display: none;
+      width: 100%;
+      min-height: 48px;
+      margin-top: 18px;
+      border: 0;
+      border-radius: 13px;
+      background: white;
+      color: var(--vino-oscuro);
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    #btnReintentar.visible {
+      display: block;
     }
   </style>
 </head>
 <body>
+
   <div id="cargando">
     <div class="cargando-contenido">
       <img class="cargando-logo" src="./cda_android_192.png" alt="Club Defensor Amay">
       <div class="cargando-titulo">Club Defensor Amay</div>
-      <div class="cargando-texto">Cargando aplicativo...</div>
+      <div id="estadoCarga" class="cargando-texto">Conectando con el sistema...</div>
+      <button id="btnReintentar" type="button" onclick="reintentar()">↻ REINTENTAR</button>
     </div>
   </div>
 
@@ -121,18 +139,117 @@
   </div>
 
   <script>
+    const APP_URL = "https://script.google.com/macros/s/AKfycbwYKQGtAGzRNZXn4xu-7Gbiq88X-wR3bM9WuIsS4uKJ6LpoyFEhimZjP_vfs9A_Eyoa/exec";
     const frame = document.getElementById('appFrame');
     const cargando = document.getElementById('cargando');
+    const estadoCarga = document.getElementById('estadoCarga');
+    const btnReintentar = document.getElementById('btnReintentar');
 
-    frame.addEventListener('load', function () {
-      setTimeout(function () {
+    let listo = false;
+    let temporizador = null;
+    let reintentoAutomaticoUsado = false;
+
+    function origenGooglePermitido(origen) {
+      return (
+        origen === 'https://script.google.com' ||
+        origen === 'https://script.googleusercontent.com' ||
+        origen.endsWith('.googleusercontent.com')
+      );
+    }
+
+    function programarControlCarga() {
+      clearTimeout(temporizador);
+
+      temporizador = setTimeout(function () {
+        if (listo) return;
+
+        if (!navigator.onLine) {
+          mostrarProblema('Sin conexión a internet. Verifica Wi‑Fi o datos móviles.');
+          return;
+        }
+
+        if (!reintentoAutomaticoUsado) {
+          reintentoAutomaticoUsado = true;
+          estadoCarga.textContent = 'La conexión está tardando. Reintentando...';
+          recargarFrame();
+          programarControlCarga();
+          return;
+        }
+
+        mostrarProblema(
+          'No se pudo completar la conexión con el sistema. Puedes reintentar sin cerrar la aplicación.'
+        );
+      }, 9000);
+    }
+
+    function mostrarProblema(texto) {
+      estadoCarga.textContent = texto;
+      btnReintentar.classList.add('visible');
+    }
+
+    function recargarFrame() {
+      listo = false;
+      btnReintentar.classList.remove('visible');
+
+      const separador = APP_URL.includes('?') ? '&' : '?';
+      frame.src = APP_URL + separador + '_cda=' + Date.now();
+    }
+
+    function reintentar() {
+      reintentoAutomaticoUsado = false;
+      estadoCarga.textContent = 'Reconectando...';
+      recargarFrame();
+      programarControlCarga();
+    }
+
+    window.addEventListener('message', function (event) {
+      if (!origenGooglePermitido(event.origin)) return;
+      if (!event.data || event.data.source !== 'CDA_APP') return;
+
+      if (event.data.type === 'CDA_BOOT') {
+        estadoCarga.textContent = 'Cargando datos...';
+        return;
+      }
+
+      if (event.data.type === 'CDA_READY') {
+        listo = true;
+        clearTimeout(temporizador);
         cargando.classList.add('oculto');
-      }, 250);
+        return;
+      }
+
+      if (event.data.type === 'CDA_FAILED') {
+        mostrarProblema(
+          event.data.detail ||
+          'No se pudo conectar con el sistema.'
+        );
+      }
     });
 
-    setTimeout(function () {
-      cargando.classList.add('oculto');
-    }, 6000);
+    window.addEventListener('offline', function () {
+      if (!listo) {
+        mostrarProblema('Sin conexión a internet. Verifica Wi‑Fi o datos móviles.');
+      }
+    });
+
+    window.addEventListener('online', function () {
+      if (!listo) {
+        estadoCarga.textContent = 'Conexión restablecida. Reconectando...';
+        reintentar();
+      }
+    });
+
+    // Respaldo: si por alguna particularidad de WebKit no llega el mensaje
+    // pero el iframe cargó, no dejamos la pantalla bloqueada indefinidamente.
+    frame.addEventListener('load', function () {
+      setTimeout(function () {
+        if (!listo && reintentoAutomaticoUsado) {
+          btnReintentar.classList.add('visible');
+        }
+      }, 3500);
+    });
+
+    programarControlCarga();
   </script>
 </body>
 </html>
